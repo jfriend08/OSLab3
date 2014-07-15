@@ -5,6 +5,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	myrandom function
 --	will able to change, printp, printf
 --	use bitwise operator
+--	adding algo=r method, random generator is fine, need to add unmap method
 
 Todo:	replacement algorithms is needed
 
@@ -77,6 +78,12 @@ void rfile_init(string input2){
 		}
 	}
 }
+int myrandom(int burst, int &index) { 	
+	if (index==randvals.size()){index=1;}
+	index++;		
+	return 1 + (randvals[index] % burst);	
+}
+
 void frametable_init(int frames){
 	for (int i=0; i<frames; i++){
 		frametable.push_back(-1);
@@ -117,20 +124,31 @@ public:
 
 	int replace(){
 		if (algo=="l"){
-			return frameFull();
+			int index =frameFull();
+			if (index != -1) return index;
+			else return 0;
+		}
+		if (algo=="r"){
+			int index =frameFull();
+			if (index != -1) return index;
+			else{
+				int index= myrandom(num_frames, ofs);
+				return index-1;
+			} 
 		}
 		else return 0;
 	}
 };
-class PTE page_table[64];	
+
+
+class PTE page_table[64];		
 
 void printp(int p_flag){
 	if (p_flag==1){
 		for(int i=0; i<num_pages; i++){
 			int control_bit=page_table[i].value;
 			control_bit>>=6;
-			if((control_bit & 8) !=8){
-				// cout<<"* ";
+			if((control_bit & 8) !=8){				
 				printf("* ");			
 			}
 			else if((control_bit & 8) == 8){
@@ -187,8 +205,8 @@ int main(int argc, char *argv[]){
 	rfile_init(argv[argc-1]);			
 	frametable_init(num_frames);
 	fram2page_init(num_frames);
-	for (int task_idx=0; task_idx<10; task_idx++){
-	// for (int task_idx=0; task_idx<tasks.size(); task_idx++){
+	// for (int task_idx=0; task_idx<24; task_idx++){
+	for (int task_idx=0; task_idx<tasks.size(); task_idx++){
 		cout<<"==> inst: "<<tasks[task_idx][0]<<" "<<tasks[task_idx][1]<<endl;
 		change(tasks[task_idx][0], tasks[task_idx][1], task_idx);
 		printp(p_flag);	
