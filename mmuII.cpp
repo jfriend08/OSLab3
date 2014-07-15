@@ -4,6 +4,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	init input, init rfile
 --	myrandom function
 --	will able to change, printp, printf
+--	use bitwise operator
 
 Todo:	replacement algorithms is needed
 
@@ -37,37 +38,6 @@ int c, opterr=0, n1, n2, ofs=0;
 string ovalue, frames, arg_tmp, algo="l", fin_string;
 char fin_char;
 
-
-
-////Class////
-class PTE {
-public:
-	int PRESENT, MODIFIED, REFERENCED, PAGEDOUT, idx2frame;	
-	PTE(){PRESENT=-1; REFERENCED=-1; MODIFIED=-1; PAGEDOUT=-1; idx2frame=-1;		}
-	void Zero(int rw, int page_index, int frame_index, int inst){				
-		string tmp="";
-		printf("%d: ZERO %4s %3d\n", inst ,tmp.c_str(), frame_index);	
-	}
-	void Map(int rw, int page_index, int frame_index, int inst){				
-		printf("%d: MAP %5d %3d\n", inst ,page_index, frame_index);			
-		frametable[frame_index]=page_index;
-		PRESENT=1; REFERENCED=1; MODIFIED=1; PAGEDOUT=0; idx2frame=frame_index;		
-	}
-
-
-};
-
-class PTE page_table[64];	
-
-
-////Function////
-int myrandom(int burst, int &index) { 	
-	if (index==randvals.size()){index=1;}
-	index++;	
-	// cout<<index<<":"<<randvals[index]<<endl;	
-	return 1 + (randvals[index] % burst);	
-}
-////Function////
 void flagAssign(string outputVal){
 	for (int i=0; i<outputVal.length(); i++){
 		if (outputVal[i]=='O'){O_flag=1;}
@@ -80,7 +50,7 @@ void flagAssign(string outputVal){
 	}
 	cout<<"O_flag="<<O_flag<<" P_flag="<<P_flag<<" F_flag="<<F_flag<<" S_flag="<<S_flag<<" p_flag="<<p_flag<<" f_flag="<<f_flag<<" a_flag="<<a_flag<<endl;
 }
-////Function////
+
 void input_init(string input1){
 	string line;
 	int found;
@@ -97,7 +67,7 @@ void input_init(string input1){
 	}
 	fin0.close();
 }
-////Function////
+
 void rfile_init(string input2){
 	ifstream fin ( input2 );
 	if (!fin.is_open()){cout<<"Cannot open the file1"<<endl;	}
@@ -107,57 +77,70 @@ void rfile_init(string input2){
 		}
 	}
 }
-void fram2page_init(int frames){
-	for (int i=0; i<frames; i++){
-		fram2page_v.push_back(-1);
-	}
-}
 void frametable_init(int frames){
 	for (int i=0; i<frames; i++){
 		frametable.push_back(-1);
 	}
 }
-////Function////
-int frameFull(){
-	for (int i =0; i<num_frames; i++){
-		if (frametable[i]==-1){
-			return i;
-		}		
+void fram2page_init(int frames){
+	for (int i=0; i<frames; i++){
+		fram2page_v.push_back(-1);
 	}
-	return -1;
-
-}
-////Function////
-int replace(){
-	if (algo=="l"){
-		return frameFull();
-	}
-	else return 0;
 }
 
-////Function////
-void change(int rw, int page_index, int inst){	
-	if (page_table[page_index].PRESENT ==-1){
-	int frame_index=replace();
-		page_table[page_index].Zero(rw, page_index, frame_index, inst);
-		page_table[page_index].Map(rw, page_index, frame_index, inst);
+class PTE {
+public:
+	int value;	
+	PTE(){value=0;}
+	// PTE(){value=0; value|=512; cout<<value<<endl;}
+	void Zero(int rw, int page_index, int frame_index, int inst){				
+		string tmp="";
+		printf("%d: ZERO %4s %3d\n", inst ,tmp.c_str(), frame_index);	
 	}
-}
+	void Map(int rw, int page_index, int frame_index, int inst){				
+		printf("%d: MAP %5d %3d\n", inst ,page_index, frame_index);			
+		frametable[frame_index]=page_index;
+		if (rw==1){value|=896;}
+		else value|=768;
+		value|=frame_index;
+		// PRESENT=1; REFERENCED=1; MODIFIED=1; PAGEDOUT=0; idx2frame=frame_index;		
+	}
+
+	int frameFull(){
+		for (int i =0; i<num_frames; i++){
+			if (frametable[i]==-1){
+				return i;
+			}		
+		}
+		return -1;
+	}
+
+	int replace(){
+		if (algo=="l"){
+			return frameFull();
+		}
+		else return 0;
+	}
+};
+class PTE page_table[64];	
+
 void printp(int p_flag){
 	if (p_flag==1){
 		for(int i=0; i<num_pages; i++){
-			// cout<<page_table[i].PRESENT<<" ";
-			if(page_table[i].PRESENT==-1){
-				cout<<"* ";
+			int control_bit=page_table[i].value;
+			control_bit>>=6;
+			if((control_bit & 8) !=8){
+				// cout<<"* ";
+				printf("* ");			
 			}
-			else if(page_table[i].PRESENT==1){
+			else if((control_bit & 8) == 8){
 				cout<<i<<":";
-				if(page_table[i].REFERENCED==1)cout<<"R"; else cout<<"-";
-				if(page_table[i].MODIFIED==1)cout<<"M"; else cout<<"-";
-				if(page_table[i].PAGEDOUT==1)cout<<"S"; else cout<<"- ";
+				if((control_bit & 4) == 4)cout<<"R"; else cout<<"-";
+				if((control_bit & 2) == 2)cout<<"M"; else cout<<"-";
+				if((control_bit & 1) == 1)cout<<"S "; else cout<<"- ";
 			}
 		}
-		cout<<" "<<endl;
+		cout<<endl;
 	}	
 }
 void printf(int f_flag){
@@ -172,6 +155,14 @@ void printf(int f_flag){
 	}	
 }
 
+
+void change(int rw, int page_index, int inst){	
+	if (page_table[page_index].value==0){
+		int frame_index=page_table[page_index].replace();
+		page_table[page_index].Zero(rw, page_index, frame_index, inst);
+		page_table[page_index].Map(rw, page_index, frame_index, inst);
+	}
+}
 
 int main(int argc, char *argv[]){
 	while((c=getopt(argc,argv,"a:o:f:")) !=-1){
