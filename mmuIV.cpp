@@ -7,7 +7,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	use bitwise operator
 --	adding algo=r method, random generator is fine, need to add unmap method
 --	have better OO design
---	==> inst 27: 1 6 has issue
+--	now r method looks good. Only need to print final report
 
 Todo:	replacement algorithms is needed
 
@@ -40,6 +40,14 @@ int num_frames=32, num_pages=64, O_flag=0, P_flag=0, F_flag=0, S_flag=0, p_flag=
 int c, opterr=0, n1, n2, ofs=0;
 string ovalue, frames, arg_tmp, algo="l", fin_string;
 char fin_char;
+
+struct bit {
+		 unsigned int P:1;
+		 unsigned int R:1;
+		 unsigned int M:1;
+		 unsigned int S:1;
+		 unsigned int idx:6;		 
+};
 
 void flagAssign(string outputVal){
 	for (int i=0; i<outputVal.length(); i++){
@@ -88,29 +96,25 @@ int myrandom(int burst, int &index) {
 	return 1 + (randvals[index] % burst);	
 }
 
-void printp(int p_flag, int* page_table, vector<int>* frame_table){
+void printp(int p_flag, bit* page_table, vector<int>* frame_table){
 	if (p_flag==1){
-		for(int i=0; i<num_pages; i++){
-			int control_bit=page_table[i];
-			control_bit>>=6;			
-			if((control_bit & 8) !=8 && (control_bit & 1) != 1){				
-				cout<<"* "<<page_table[i]<<" ";
-				// printf("* ");			
-			}
-			else if((control_bit & 1) == 1)cout<<"# "<<page_table[i]<<" ";
-			else if((control_bit & 8) == 8){
-				cout<<i<<":"<<page_table[i]<<":";
-				// cout<<i<<":"<<"control_bit:"<<control_bit;
-				if((control_bit & 4) == 4)cout<<"R"; else cout<<"-";
-				if((control_bit & 2) == 2)cout<<"M"; else cout<<"-";
-				if((control_bit & 1) == 1)cout<<"S "; else cout<<"- ";
+		for(int i=0; i<num_pages; i++){			
+			if(	page_table[i].P!=1 && page_table[i].S !=1){
+				cout<<"* ";
+			}							
+			else if(page_table[i].P!=1 && page_table[i].S ==1)cout<<"# ";
+			else if(page_table[i].P ==1){
+				cout<<i<<":";
+				if(page_table[i].R ==1)cout<<"R"; else cout<<"-";
+				if(page_table[i].M ==1)cout<<"M"; else cout<<"-";
+				if(page_table[i].S ==1)cout<<"S "; else cout<<"- ";
 			}
 		}
 		cout<<endl;
 	}	
 }
 
-void printf(int f_flag, int* page_table, vector<int>* frame_table){
+void printf(int f_flag, bit* page_table, vector<int>* frame_table){
 	if (f_flag==1){
 		for(int i=0; i<num_frames; i++){
 			if(frametable[i]==-1){cout<<"* ";			}
@@ -125,7 +129,7 @@ void printf(int f_flag, int* page_table, vector<int>* frame_table){
 
 class Pager{
 public:
-	virtual int Change(int* page_table, vector<int>* frame_table){return 0;} 
+	virtual int Change(bit* page_table, vector<int>* frame_table){return 0;} 
 	int frameFull(){
 		for (int i =0; i<num_frames; i++){
 			if (frametable[i]==-1){
@@ -137,7 +141,7 @@ public:
 };
 class Random : public Pager {
 public:
-	int Change (int* page_table, vector<int>* frame_table){
+	int Change (bit* page_table, vector<int>* frame_table){
 		int index =frameFull();
 			if (index != -1) return index;
 			else{
@@ -159,79 +163,101 @@ public:
 		if (value>0) return 1; 
 		else return 0;
 	}
-
-	void Zero(int rw, int page_index, int frame_index, int inst){
+	////Zero: zero frame table [i], then print out ////
+	void Zero(int rw, int page_index, int frame_index, int inst){		
 		workon_F->at(frame_index)=0;
 		string tmp="";
 		printf("%d: ZERO %4s %3d\n", inst ,tmp.c_str(), frame_index);	
 	} 
-	void Map(int rw, int page_index, int frame_index, int inst){
-		int value=workon_P[page_index];		
-		printf("%d: MAP %5d %3d\n", inst ,page_index, frame_index);			
-		workon_F->at(frame_index)=page_index;
-		// cout<<"pre Map value/rw:"<<value<<"/"<<rw<<" page_index:"<<page_index<<" workon_P[page_index]"<<workon_P[page_index]<<endl;
-		if (rw==1){value|=896;}
-		else if (rw==0) {value<<=13;value>>=13;value|=768;}
-		// cout<<"post Map value/rw:"<<value<<"/"<<rw<<endl;
-		value|=frame_index;
-		workon_P[page_index]=value;
+
+	//// remove idx at page table, remove present R bit. I did not remove M bit ////
+	void Unmap(int page_index, int frame_index, int inst){				
+		int index_to_change=workon_F->at(frame_index);
+		workon_P[index_to_change].idx=0; workon_P[index_to_change].P=0;
+		workon_P[index_to_change].R=0; 
+		printf("%d: UNMAP %3d %3d\n", inst ,workon_F->at(frame_index), frame_index);
 	}
-	void Unmap(int page_index, int frame_index, int inst){
-		
-		int value=workon_P[workon_F->at(frame_index)];
-		value>>=6;value<<=6;value^=512;workon_P[workon_F->at(frame_index)]=value; // remove frame_index remove present bit
-		
-		printf("%d: UNMAP %3d %3d\n", inst ,workon_F->at(frame_index), frame_index);			
-		
-	}
+	//// add S bit ////
 	void Pageout(int rw, int page_index, int frame_index, int inst){
-		workon_P[workon_F->at(frame_index)]|=64;
+		int index_to_change=workon_F->at(frame_index);
+		workon_P[index_to_change].S=1;
 		printf("%d: OUT %5d %3d\n", inst ,workon_F->at(frame_index), frame_index);			
 	}
-	void Modify (int rw, int page_index, int inst){
-		workon_P[page_index]|=128;
+	void Pagein(int rw, int page_index, int frame_index, int inst){
+				
+		printf("%d: IN %6d %3d\n", inst ,page_index, frame_index);					
+	}	
+
+	//// at P and R bit, add index to frame, add M bit depends on rw, then print ////
+	void Map(int rw, int page_index, int frame_index, int inst){
+		workon_P[page_index].R=1;		
+		workon_F->at(frame_index)=page_index; // assign page index to frame
+		workon_P[page_index].P=1;
+		workon_P[page_index].idx=frame_index;
+		if (rw==1){workon_P[page_index].M=1;}else{workon_P[page_index].M=0;}		
+		printf("%d: MAP %5d %3d\n", inst ,page_index, frame_index);					
 	}
-	void Pagein(int rw, int page_index, int frame_index, int inst){}	
+	
+	//// just add M bit ////
+	void Modify (int rw, int page_index, int inst){
+		workon_P[page_index].M=1;		
+	}
 	
 	Pager* pager;
-	int* workon_P;
+	bit* workon_P;
 	vector<int>* workon_F;
-	void Process(){
-		
-		// for (int i=0; i<num_frames; i++){cout<<"FrameTable:"<<workon_F->at(i)<<endl;}
-		for (int task_idx=0; task_idx<40; task_idx++){
+	void Process(){				
+		for (int task_idx=0; task_idx<tasks.size(); task_idx++){
 			cout<<"==> inst: "<<tasks[task_idx][0]<<" "<<tasks[task_idx][1]<<endl;
+			// cout<<"==> inst: "<<tasks[task_idx][0]<<" "<<tasks[task_idx][1]<<" value:"<<workon_P[tasks[task_idx][1]].idx<<endl;
 			int rw=tasks[task_idx][0];
 			int page_index=tasks[task_idx][1];
 			
-			if (workon_P[page_index]==0 && pager->frameFull()!=-1){		//page table still new, frame not full
+			//page table not present, no swaped bit, frame not full
+			if (workon_P[page_index].P==0 && workon_P[page_index].S!=1 && pager->frameFull()!=-1){		
 				if (R_flag==1)cout<<"condition1"<<endl;
 				int frame_index=pager->Change(workon_P, workon_F);	
 				Zero(rw, page_index, frame_index, task_idx);
 				Map(rw, page_index, frame_index, task_idx);							
 			}
-			else if (workon_P[page_index] ==0 && pager->frameFull()==-1 ){		//page table still new, frame full
+
+			//page table not present, no swaped bit, frame full
+			else if (workon_P[page_index].P ==0 && workon_P[page_index].S!=1 && pager->frameFull()==-1 ){		
 				if (R_flag==1)cout<<"condition2"<<endl;
 				int frame_index = pager->Change(workon_P, workon_F);	
 				Unmap(page_index,frame_index, task_idx);							
-				if ((workon_P[workon_F->at(frame_index)] & 128) == 128){ Pageout (rw, page_index, frame_index, task_idx);}
+				if (workon_P[workon_F->at(frame_index)].M == 1){ Pageout (rw, page_index, frame_index, task_idx);}
 				Zero(rw, page_index, frame_index, task_idx);
-				Map(rw, page_index, frame_index, task_idx);							
-
+				Map(rw, page_index, frame_index, task_idx);											
 			}
-			else if (FrameIndexPresent(workon_P[page_index]) ==1 && pager->frameFull()==-1  && rw == 0){		//FrameIndex exit in page entry, frame full, read page only --> do nothing
+
+			//page table not present, has swaped bit, frame full
+			else if (workon_P[page_index].P ==0 && workon_P[page_index].S==1 && pager->frameFull()==-1 ){		
 				if (R_flag==1)cout<<"condition3"<<endl;
-			}		
-			else if (FrameIndexPresent(workon_P[page_index]) ==1 && pager->frameFull()==-1  && rw == 1){		//FrameIndex exit in page entry, frame full, write page --> add modify bit
-				if (R_flag==1)cout<<"condition4"<<endl;
-				Modify(rw, page_index, task_idx);
-			}	
-			////pager->frameFull() == -1 --> page fault////			
-			else if (pager->frameFull()==-1){				// frame is full
-				if (R_flag==1)cout<<"condition5"<<endl;
 				int frame_index = pager->Change(workon_P, workon_F);	
 				Unmap(page_index,frame_index, task_idx);							
-				if ((workon_P[workon_F->at(frame_index)] & 128) == 128){ Pageout (rw, page_index, frame_index, task_idx);}
+				if (workon_P[workon_F->at(frame_index)].M == 1){ Pageout (rw, page_index, frame_index, task_idx);}
+				Pagein(rw, page_index, frame_index, task_idx);
+				Map(rw, page_index, frame_index, task_idx);											
+			}
+
+			//page table present, frame full, read page only --> do nothing
+			else if (workon_P[page_index].P==1 && pager->frameFull()==-1  && rw == 0){		
+				if (R_flag==1)cout<<"condition4"<<endl;
+			}		
+			
+			//page table present, frame full, write page --> add modify bit
+			else if (workon_P[page_index].P==1 && pager->frameFull()==-1  && rw == 1){		
+				if (R_flag==1)cout<<"condition5"<<endl;
+				Modify(rw, page_index, task_idx);
+			}	
+			
+			////pager->frameFull() == -1 --> page fault////			
+			else if (pager->frameFull()==-1){				// frame is full
+				if (R_flag==1)cout<<"condition6"<<endl;
+				int frame_index = pager->Change(workon_P, workon_F);	
+				Unmap(page_index,frame_index, task_idx);							
+				if (workon_P[workon_F->at(frame_index)].M == 1){ Pageout (rw, page_index, frame_index, task_idx);}
 				Zero(rw, page_index, frame_index, task_idx);
 				Map(rw, page_index, frame_index, task_idx);							
 			}
@@ -266,7 +292,7 @@ int main(int argc, char *argv[]){
 	
 	if (algo=="r") {mmu.pager = new Random;}
 	mmu.frametable_init(num_frames);
-	int page_table[64] = { };
+	bit page_table[64] = { };
 	mmu.workon_P=page_table;
 	mmu.workon_F=&frametable;
 	input_init(argv[argc-2]);	
