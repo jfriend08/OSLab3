@@ -8,6 +8,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	adding algo=r method, random generator is fine, need to add unmap method
 --	have better OO design
 --	now r method looks good. Only need to print final report
+--	can print O, F, P as the order of option string
 
 Todo:	replacement algorithms is needed
 
@@ -36,6 +37,7 @@ vector<int> tasks_tmp;
 vector<vector<int> > tasks;
 vector<int> frametable;
 vector<int> fram2page_v;
+vector<char> printOrder_v;
 int num_frames=32, num_pages=64, O_flag=0, P_flag=0, F_flag=0, S_flag=0, p_flag=0, f_flag=0, a_flag=0, R_flag=0; 
 int c, opterr=0, n1, n2, ofs=0;
 string ovalue, frames, arg_tmp, algo="l", fin_string;
@@ -51,10 +53,10 @@ struct bit {
 
 void flagAssign(string outputVal){
 	for (int i=0; i<outputVal.length(); i++){
-		if (outputVal[i]=='O'){O_flag=1;}
-		else if (outputVal[i]=='P'){P_flag=1;}
-		else if (outputVal[i]=='F'){F_flag=1;}
-		else if (outputVal[i]=='S'){S_flag=1;}
+		if (outputVal[i]=='O'){O_flag=1;printOrder_v.push_back('O');}
+		else if (outputVal[i]=='P'){P_flag=1;printOrder_v.push_back('P');}
+		else if (outputVal[i]=='F'){F_flag=1;printOrder_v.push_back('F');}
+		else if (outputVal[i]=='S'){S_flag=1;printOrder_v.push_back('S');}
 		else if (outputVal[i]=='p'){p_flag=1;}
 		else if (outputVal[i]=='f'){f_flag=1;}
 		else if (outputVal[i]=='a'){a_flag=1;}		
@@ -167,7 +169,7 @@ public:
 	void Zero(int rw, int page_index, int frame_index, int inst){		
 		workon_F->at(frame_index)=0;
 		string tmp="";
-		printf("%d: ZERO %4s %3d\n", inst ,tmp.c_str(), frame_index);	
+		if(O_flag==1)printf("%d: ZERO %4s %3d\n", inst ,tmp.c_str(), frame_index);	
 	} 
 
 	//// remove idx at page table, remove present R bit. I did not remove M bit ////
@@ -175,17 +177,17 @@ public:
 		int index_to_change=workon_F->at(frame_index);
 		workon_P[index_to_change].idx=0; workon_P[index_to_change].P=0;
 		workon_P[index_to_change].R=0; 
-		printf("%d: UNMAP %3d %3d\n", inst ,workon_F->at(frame_index), frame_index);
+		if(O_flag==1)printf("%d: UNMAP %3d %3d\n", inst ,workon_F->at(frame_index), frame_index);
 	}
 	//// add S bit ////
 	void Pageout(int rw, int page_index, int frame_index, int inst){
 		int index_to_change=workon_F->at(frame_index);
 		workon_P[index_to_change].S=1;
-		printf("%d: OUT %5d %3d\n", inst ,workon_F->at(frame_index), frame_index);			
+		if(O_flag==1)printf("%d: OUT %5d %3d\n", inst ,workon_F->at(frame_index), frame_index);			
 	}
 	void Pagein(int rw, int page_index, int frame_index, int inst){
 				
-		printf("%d: IN %6d %3d\n", inst ,page_index, frame_index);					
+		if(O_flag==1)printf("%d: IN %6d %3d\n", inst ,page_index, frame_index);					
 	}	
 
 	//// at P and R bit, add index to frame, add M bit depends on rw, then print ////
@@ -195,7 +197,7 @@ public:
 		workon_P[page_index].P=1;
 		workon_P[page_index].idx=frame_index;
 		if (rw==1){workon_P[page_index].M=1;}else{workon_P[page_index].M=0;}		
-		printf("%d: MAP %5d %3d\n", inst ,page_index, frame_index);					
+		if(O_flag==1)printf("%d: MAP %5d %3d\n", inst ,page_index, frame_index);					
 	}
 	
 	//// just add M bit ////
@@ -208,7 +210,7 @@ public:
 	vector<int>* workon_F;
 	void Process(){				
 		for (int task_idx=0; task_idx<tasks.size(); task_idx++){
-			cout<<"==> inst: "<<tasks[task_idx][0]<<" "<<tasks[task_idx][1]<<endl;
+			if(O_flag==1)cout<<"==> inst: "<<tasks[task_idx][0]<<" "<<tasks[task_idx][1]<<endl;
 			// cout<<"==> inst: "<<tasks[task_idx][0]<<" "<<tasks[task_idx][1]<<" value:"<<workon_P[tasks[task_idx][1]].idx<<endl;
 			int rw=tasks[task_idx][0];
 			int page_index=tasks[task_idx][1];
@@ -265,6 +267,13 @@ public:
 			// cout<<endl;
 			printp(p_flag, workon_P, workon_F);	
 			printf(f_flag, workon_P, workon_F);	
+		}		
+	}
+
+	void printReport(){
+		for(int i=0; i<printOrder_v.size(); i++){
+			if (printOrder_v[i]=='P')printp(1, workon_P, workon_F);
+			else if (printOrder_v[i]=='F')printf(1, workon_P, workon_F);
 		}
 	}
 
@@ -279,7 +288,7 @@ int main(int argc, char *argv[]){
 				break;
 			case 'o':
 				ovalue.assign(optarg);				
-				flagAssign(ovalue);
+				if (ovalue!="")flagAssign(ovalue);
 				break;
 			case 'f':					
 				num_frames=atoi(optarg);				
@@ -299,6 +308,10 @@ int main(int argc, char *argv[]){
 	rfile_init(argv[argc-1]);			
 	
 	mmu.Process();
+	cout<<"size:"<<printOrder_v.size()<<endl;
+	mmu.printReport();
+
+
 	// for (int i=0; i<64; i++){cout<<mmu.workon_P[i]<<endl;}
 	// for (int i=0; i<mmu.workon_F->size(); i++){cout<<mmu.workon_F->at(i)<<endl;}
 	// fram2page_init(num_frames);
