@@ -9,6 +9,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	have better OO design
 --	now r method looks good. Only need to print final report
 --	can print O, F, P as the order of option string
+--	try to print S, but still missing 8 read&write count for out_in1K4_16_r_pfOPFS
 
 Todo:	replacement algorithms is needed
 
@@ -42,6 +43,7 @@ int num_frames=32, num_pages=64, O_flag=0, P_flag=0, F_flag=0, S_flag=0, p_flag=
 int c, opterr=0, n1, n2, ofs=0;
 string ovalue, frames, arg_tmp, algo="l", fin_string;
 char fin_char;
+uint64_t U_count=0, M_count=0, I_count=0, O_count=0, Z_count=0, RW_count=0;
 
 struct bit {
 		 unsigned int P:1;
@@ -62,7 +64,7 @@ void flagAssign(string outputVal){
 		else if (outputVal[i]=='a'){a_flag=1;}		
 		else if (outputVal[i]=='R'){R_flag=1;}		
 	}
-	cout<<"O_flag="<<O_flag<<" P_flag="<<P_flag<<" F_flag="<<F_flag<<" S_flag="<<S_flag<<" p_flag="<<p_flag<<" f_flag="<<f_flag<<" a_flag="<<a_flag<<endl;
+	// cout<<"O_flag="<<O_flag<<" P_flag="<<P_flag<<" F_flag="<<F_flag<<" S_flag="<<S_flag<<" p_flag="<<p_flag<<" f_flag="<<f_flag<<" a_flag="<<a_flag<<endl;
 }
 
 void input_init(string input1){
@@ -170,6 +172,7 @@ public:
 		workon_F->at(frame_index)=0;
 		string tmp="";
 		if(O_flag==1)printf("%d: ZERO %4s %3d\n", inst ,tmp.c_str(), frame_index);	
+		Z_count++;
 	} 
 
 	//// remove idx at page table, remove present R bit. I did not remove M bit ////
@@ -178,16 +181,18 @@ public:
 		workon_P[index_to_change].idx=0; workon_P[index_to_change].P=0;
 		workon_P[index_to_change].R=0; 
 		if(O_flag==1)printf("%d: UNMAP %3d %3d\n", inst ,workon_F->at(frame_index), frame_index);
+		U_count++;
 	}
 	//// add S bit ////
 	void Pageout(int rw, int page_index, int frame_index, int inst){
 		int index_to_change=workon_F->at(frame_index);
 		workon_P[index_to_change].S=1;
 		if(O_flag==1)printf("%d: OUT %5d %3d\n", inst ,workon_F->at(frame_index), frame_index);			
+		O_count++;
 	}
-	void Pagein(int rw, int page_index, int frame_index, int inst){
-				
+	void Pagein(int rw, int page_index, int frame_index, int inst){				
 		if(O_flag==1)printf("%d: IN %6d %3d\n", inst ,page_index, frame_index);					
+		I_count++;
 	}	
 
 	//// at P and R bit, add index to frame, add M bit depends on rw, then print ////
@@ -198,6 +203,7 @@ public:
 		workon_P[page_index].idx=frame_index;
 		if (rw==1){workon_P[page_index].M=1;}else{workon_P[page_index].M=0;}		
 		if(O_flag==1)printf("%d: MAP %5d %3d\n", inst ,page_index, frame_index);					
+		M_count++;
 	}
 	
 	//// just add M bit ////
@@ -221,6 +227,7 @@ public:
 				int frame_index=pager->Change(workon_P, workon_F);	
 				Zero(rw, page_index, frame_index, task_idx);
 				Map(rw, page_index, frame_index, task_idx);							
+				RW_count++;
 			}
 
 			//page table not present, no swaped bit, frame full
@@ -231,6 +238,7 @@ public:
 				if (workon_P[workon_F->at(frame_index)].M == 1){ Pageout (rw, page_index, frame_index, task_idx);}
 				Zero(rw, page_index, frame_index, task_idx);
 				Map(rw, page_index, frame_index, task_idx);											
+				RW_count++;
 			}
 
 			//page table not present, has swaped bit, frame full
@@ -241,17 +249,20 @@ public:
 				if (workon_P[workon_F->at(frame_index)].M == 1){ Pageout (rw, page_index, frame_index, task_idx);}
 				Pagein(rw, page_index, frame_index, task_idx);
 				Map(rw, page_index, frame_index, task_idx);											
+				RW_count++;
 			}
 
 			//page table present, frame full, read page only --> do nothing
 			else if (workon_P[page_index].P==1 && pager->frameFull()==-1  && rw == 0){		
 				if (R_flag==1)cout<<"condition4"<<endl;
+				RW_count++;
 			}		
 			
 			//page table present, frame full, write page --> add modify bit
 			else if (workon_P[page_index].P==1 && pager->frameFull()==-1  && rw == 1){		
 				if (R_flag==1)cout<<"condition5"<<endl;
 				Modify(rw, page_index, task_idx);
+				RW_count++;
 			}	
 			
 			////pager->frameFull() == -1 --> page fault////			
@@ -262,6 +273,7 @@ public:
 				if (workon_P[workon_F->at(frame_index)].M == 1){ Pageout (rw, page_index, frame_index, task_idx);}
 				Zero(rw, page_index, frame_index, task_idx);
 				Map(rw, page_index, frame_index, task_idx);							
+				RW_count++;
 			}
 			// for (int i=0; i<64; i++){cout<<i<<":"<<workon_P[i]<<" ";}			
 			// cout<<endl;
@@ -274,6 +286,11 @@ public:
 		for(int i=0; i<printOrder_v.size(); i++){
 			if (printOrder_v[i]=='P')printp(1, workon_P, workon_F);
 			else if (printOrder_v[i]=='F')printf(1, workon_P, workon_F);
+			else if (printOrder_v[i]=='S'){
+				int task_totle=tasks.size();
+				int SUM=(M_count+U_count)*400+(I_count+O_count)*3000+Z_count*150+RW_count*1;
+				cout<<"SUM "<<task_totle<<" U="<<U_count<<" M="<<M_count<<" I="<<I_count<<" O="<<O_count<<" Z="<<Z_count<<" ===> "<<SUM<<endl;
+			}
 		}
 	}
 
@@ -297,7 +314,7 @@ int main(int argc, char *argv[]){
 				abort();
 		}
 	}
-	cout<<"algo="<<algo<<" ovalue="<<ovalue<<" num_frames="<<num_frames<<endl;
+	// cout<<"algo="<<algo<<" ovalue="<<ovalue<<" num_frames="<<num_frames<<endl;
 	
 	if (algo=="r") {mmu.pager = new Random;}
 	mmu.frametable_init(num_frames);
@@ -308,7 +325,6 @@ int main(int argc, char *argv[]){
 	rfile_init(argv[argc-1]);			
 	
 	mmu.Process();
-	cout<<"size:"<<printOrder_v.size()<<endl;
 	mmu.printReport();
 
 
