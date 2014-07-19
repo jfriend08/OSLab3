@@ -9,7 +9,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	have better OO design
 --	now r method looks good. Only need to print final report
 --	can print O, F, P as the order of option string
---	r method now works find for all input including in1M
+--	works fine for r f s c methos
 
 Todo:	replacement algorithms is needed
 
@@ -37,7 +37,6 @@ vector<int> randvals;
 vector<int> tasks_tmp;
 vector<vector<int> > tasks;
 vector<int> frametable;
-vector<int> fram2page_v;
 vector<char> printOrder_v;
 int num_frames=32, num_pages=64, O_flag=0, P_flag=0, F_flag=0, S_flag=0, p_flag=0, f_flag=0, a_flag=0, R_flag=0; 
 int c, opterr=0, n1, n2, ofs=0;
@@ -45,6 +44,7 @@ string ovalue, frames, arg_tmp, algo="l", fin_string;
 char fin_char;
 uint64_t U_count=0, M_count=0, I_count=0, O_count=0, Z_count=0, RW_count=0;
 deque<int> FIFO_dq;
+int hand=0;
 
 struct bit {
 		 unsigned int P:1;
@@ -127,6 +127,27 @@ void printf(int f_flag, bit* page_table, vector<int>* frame_table){
 				cout<<frametable[i]<<" ";
 			}				
 		}
+		if(algo=="f" | algo=="s"){
+			cout<<" || ";
+			for (int i=0; i<(signed)FIFO_dq.size(); ++i){
+				cout<<FIFO_dq[i]<<" ";
+			}
+		}
+		if(algo=="c"){
+			cout<<" || hand = "<<hand;
+			
+		}
+		cout<<"\n";
+	}	
+}
+void printf_final(int f_flag, bit* page_table, vector<int>* frame_table){
+	if (f_flag==1){
+		for(int i=0; i<num_frames; i++){
+			if(frametable[i]==-1){cout<<"* ";			}
+			else {
+				cout<<frametable[i]<<" ";
+			}				
+		}
 		cout<<"\n";
 	}	
 }
@@ -134,6 +155,7 @@ void printf(int f_flag, bit* page_table, vector<int>* frame_table){
 
 class Pager{
 public:
+	// virtual int Change(bit* &page_table, vector<int>* &frame_table){return 0;} 
 	virtual int Change(bit* page_table, vector<int>* frame_table){return 0;} 
 	int frameFull(){
 		for (int i =0; i<num_frames; i++){
@@ -161,7 +183,68 @@ class FIFO : public Pager{
 	int Change (bit* page_table, vector<int>* frame_table){
 		int index=frameFull();
 		if (index !=-1){
+			FIFO_dq.push_back(index);
+			return index;
+		}
+		else{
+			int new_index= FIFO_dq[0];			
+			FIFO_dq.pop_front();
+			FIFO_dq.push_back(new_index);
+			return new_index;			
+		}
+	}
+};
+class SecondChance : public Pager{
+	int Change (bit* page_table, vector<int>* frame_table){
+		int index=frameFull();		
+		if (index !=-1){
+			FIFO_dq.push_back(index);
+			return index;
+		}	
+		else{			
+			int new_index= FIFO_dq[0]; //this return the frame index			
+			int p_idx = frame_table->at(new_index);
+			int Rbit = page_table[p_idx].R;			
+			while (Rbit!=0){
+				FIFO_dq.pop_front();
+				page_table[p_idx].R=0;				
+				FIFO_dq.push_back(new_index);
+				new_index= FIFO_dq[0];
+				p_idx = frame_table->at(new_index);
+				Rbit = page_table[p_idx].R;
+			}
+			FIFO_dq.pop_front();
+			FIFO_dq.push_back(new_index);
+			return new_index;			
+		}
+	}
+};
 
+class Clock : public Pager{
+	int Change (bit* page_table, vector<int>* frame_table){
+		int index=frameFull();		
+		if (index !=-1){
+			FIFO_dq.push_back(index);
+			return index;
+		}	
+		else{
+			int p_idx=frame_table->at(hand);
+			if(page_table[p_idx].R==0){
+				int tmp2=hand;
+				hand++;
+				if(hand>frametable.size()-1)hand=0;
+				return tmp2;	
+			}
+			while(page_table[p_idx].R!=0){				
+				page_table[p_idx].R=0;				
+				hand++;
+				if(hand>frametable.size()-1)hand=0;
+				p_idx=frame_table->at(hand);
+			}	
+			int tmp=hand;
+			hand++;				
+			if(hand>frametable.size()-1)hand=0;	
+			return tmp;
 		}
 	}
 };
@@ -223,9 +306,13 @@ public:
 		M_count++;
 	}
 	
-	//// just add M bit ////
+	//// just add R & M bit ////
 	void Modify (int rw, int page_index, int inst){
-		workon_P[page_index].M=1;		
+		workon_P[page_index].R=1;workon_P[page_index].M=1;		
+	}
+	//// just add R bit ////
+	void Reference (int rw, int page_index, int inst){
+		workon_P[page_index].R=1;		
 	}
 	
 	Pager* pager;
@@ -233,7 +320,7 @@ public:
 	vector<int>* workon_F;
 	void Process(){				
 		for (int task_idx=0; task_idx<tasks.size(); task_idx++){
-			if(O_flag==1)cout<<"==> inst: "<<tasks[task_idx][0]<<" "<<tasks[task_idx][1]<<endl;			
+			if(O_flag==1)cout<<"==> inst: "<<tasks[task_idx][0]<<" "<<tasks[task_idx][1]<<endl;						
 			int rw=tasks[task_idx][0];
 			int page_index=tasks[task_idx][1];
 			if (workon_P[page_index].P==0){
@@ -261,6 +348,7 @@ public:
 				else if(full!=-1){
 					if (R_flag==1)cout<<"condition1_3"<<endl;
 					int frame_index = pager->Change(workon_P, workon_F);	
+					// cout<<"frame_index:"<<frame_index<<endl;
 					Zero(rw, page_index, frame_index, task_idx);
 					Map(rw, page_index, frame_index, task_idx);							
 					RW_count++;
@@ -272,10 +360,12 @@ public:
 				if(rw==1){
 					if (R_flag==1)cout<<"condition2_1"<<endl;
 					Modify(rw, page_index, task_idx);
+					Reference(rw, page_index, task_idx);
 					RW_count++;
 				}
 				else if (rw==0){
 					if (R_flag==1)cout<<"condition2_2"<<endl;
+					Reference(rw, page_index, task_idx);
 					RW_count++;
 				}				
 			}
@@ -287,7 +377,7 @@ public:
 	void printReport(){
 		for(int i=0; i<printOrder_v.size(); i++){
 			if (printOrder_v[i]=='P')printp(1, workon_P, workon_F);
-			else if (printOrder_v[i]=='F')printf(1, workon_P, workon_F);
+			else if (printOrder_v[i]=='F')printf_final(1, workon_P, workon_F);
 			else if (printOrder_v[i]=='S'){
 				uint64_t task_totle=tasks.size();
 				uint64_t SUM=(M_count+U_count)*400+(I_count+O_count)*3000+Z_count*150+RW_count*1;
@@ -319,6 +409,9 @@ int main(int argc, char *argv[]){
 	// cout<<"algo="<<algo<<" ovalue="<<ovalue<<" num_frames="<<num_frames<<endl;
 	
 	if (algo=="r") {mmu.pager = new Random;}
+	if (algo=="f") {mmu.pager = new FIFO;}
+	if (algo=="s") {mmu.pager = new SecondChance;}
+	if (algo=="c") {mmu.pager = new Clock;}
 	mmu.frametable_init(num_frames);
 	bit page_table[64] = { };
 	mmu.workon_P=page_table;
