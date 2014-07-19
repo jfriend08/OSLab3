@@ -44,6 +44,7 @@ int c, opterr=0, n1, n2, ofs=0;
 string ovalue, frames, arg_tmp, algo="l", fin_string;
 char fin_char;
 uint64_t U_count=0, M_count=0, I_count=0, O_count=0, Z_count=0, RW_count=0;
+deque<int> FIFO_dq;
 
 struct bit {
 		 unsigned int P:1;
@@ -155,6 +156,16 @@ public:
 			} 
 	}
 };
+
+class FIFO : public Pager{
+	int Change (bit* page_table, vector<int>* frame_table){
+		int index=frameFull();
+		if (index !=-1){
+
+		}
+	}
+};
+
 
 class MMU{
 public:
