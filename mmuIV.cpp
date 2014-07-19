@@ -9,7 +9,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	have better OO design
 --	now r method looks good. Only need to print final report
 --	can print O, F, P as the order of option string
---	try to print S, but still missing 8 read&write count for out_in1K4_16_r_pfOPFS
+--	r method works fine, except for in1M2
 
 Todo:	replacement algorithms is needed
 
@@ -191,6 +191,9 @@ public:
 		O_count++;
 	}
 	void Pagein(int rw, int page_index, int frame_index, int inst){				
+		workon_P[page_index].R=1;		
+		workon_P[page_index].idx=frame_index;
+		if (rw==1){workon_P[page_index].M=1;}else{workon_P[page_index].M=0;}		
 		if(O_flag==1)printf("%d: IN %6d %3d\n", inst ,page_index, frame_index);					
 		I_count++;
 	}	
@@ -198,9 +201,9 @@ public:
 	//// at P and R bit, add index to frame, add M bit depends on rw, then print ////
 	void Map(int rw, int page_index, int frame_index, int inst){
 		workon_P[page_index].R=1;		
+		workon_P[page_index].idx=frame_index;
 		workon_F->at(frame_index)=page_index; // assign page index to frame
 		workon_P[page_index].P=1;
-		workon_P[page_index].idx=frame_index;
 		if (rw==1){workon_P[page_index].M=1;}else{workon_P[page_index].M=0;}		
 		if(O_flag==1)printf("%d: MAP %5d %3d\n", inst ,page_index, frame_index);					
 		M_count++;
@@ -273,6 +276,12 @@ public:
 				if (workon_P[workon_F->at(frame_index)].M == 1){ Pageout (rw, page_index, frame_index, task_idx);}
 				Zero(rw, page_index, frame_index, task_idx);
 				Map(rw, page_index, frame_index, task_idx);							
+				RW_count++;
+			}
+			//// just read resent page, do nothing ////
+			else{
+				if (R_flag==1)cout<<"condition7"<<endl;
+				if(rw==1)Modify(rw, page_index, task_idx);
 				RW_count++;
 			}
 			// for (int i=0; i<64; i++){cout<<i<<":"<<workon_P[i]<<" ";}			
