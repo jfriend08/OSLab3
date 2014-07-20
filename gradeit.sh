@@ -12,7 +12,7 @@ DARGS="-q --speed-large-files"         # the big files are killing us --> out of
 FILES="in18_4 in60_8 in1K4_16 in10K3_32"
 #FILES="in18_4 in60_8"
 
-ALGOS="r f s c"
+ALGOS="r f s c X"
 #ALGOS="N  l  r  f  s  c  X  a  Y"
 
 declare -ai counters
