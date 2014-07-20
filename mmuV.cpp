@@ -9,7 +9,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	have better OO design
 --	now r method looks good. Only need to print final report
 --	can print O, F, P as the order of option string
---	works fine for r f s c X l methods
+--	works fine for r f s c X l N methods
 
 Todo:	replacement algorithms is needed
 
@@ -44,7 +44,7 @@ string ovalue, frames, arg_tmp, algo="l", fin_string;
 char fin_char;
 uint64_t U_count=0, M_count=0, I_count=0, O_count=0, Z_count=0, RW_count=0;
 deque<int> FIFO_dq, LRU_dq;
-int hand=0;
+int hand=0, unMap_count=1;
 
 struct bit {
 		 unsigned int P:1;
@@ -151,8 +151,7 @@ void printf_final(int f_flag, bit* page_table, vector<int>* frame_table){
 
 
 class Pager{
-public:
-	// virtual int Change(bit* &page_table, vector<int>* &frame_table){return 0;} 
+public:	
 	virtual int Change(bit* page_table, vector<int>* frame_table){return 0;} 
 	int frameFull(){
 		for (int i =0; i<num_frames; i++){
@@ -161,6 +160,14 @@ public:
 			}		
 		}
 		return -1;
+	}
+
+	vector<int> check_existP(bit* page_table, vector<int>* frame_table){
+		vector<int> existPage;		
+		for (int i=0; i<num_pages; i++){			
+			if(page_table[i].P==1){existPage.push_back(i);			}
+		}
+		return existPage;
 	}
 };
 
@@ -247,13 +254,7 @@ class Clock_f : public Pager{
 };
 
 class Clock_p : public Pager{
-	vector<int> check_existP(bit* page_table, vector<int>* frame_table){
-		vector<int> existPage;		
-		for (int i=0; i<num_pages; i++){			
-			if(page_table[i].P==1){existPage.push_back(i);			}
-		}
-		return existPage;
-	}
+	
 	int next_idx(vector<int> existPage, int hand_idx){
 		for(int i=0; i<existPage.size(); i++){
 			if (hand_idx==existPage[i] && i==existPage.size()-1){return existPage[0];}
@@ -312,7 +313,38 @@ class LRU : public Pager{
 };
 
 class NRU : public Pager{
+	void unRef(bit* page_table){
+		for (int i=0; i<num_pages; i++){
+			if (page_table[i].P==1){
+				page_table[i].R=0;
+			}
+		}
+	}
+	int lowest_Pidx(bit* page_table, int index){		
+		int closest_idx=index;
+		while(page_table[index].P!=1){
+			index--;
+			closest_idx=index;
+		}
+		return closest_idx;
+	}
+	vector<int> findLowestClass(bit* page_table){
+		vector<int> R0M0_v, R0M1_v, R1M0_v, R1M1_v;
+		for (int i=0; i<num_pages; i++){
+			if (page_table[i].P==1 && page_table[i].R==0 && page_table[i].M==0){ R0M0_v.push_back(i);}
+			else if (page_table[i].P==1 && page_table[i].R==0 && page_table[i].M==1){ R0M1_v.push_back(i);}
+			else if (page_table[i].P==1 && page_table[i].R==1 && page_table[i].M==0){ R1M0_v.push_back(i);}
+			else if (page_table[i].P==1 && page_table[i].R==1 && page_table[i].M==1){ R1M1_v.push_back(i);}			
+		}
+		// cout<<R0M0_v.size()<<" "<<R0M1_v.size()<<" "<<R1M0_v.size()<<" "<<R1M1_v.size()<<endl;
+		if (R0M0_v.size()>0) return R0M0_v;
+		else if (R0M1_v.size()>0) return R0M1_v;
+		else if (R1M0_v.size()>0) return R1M0_v;
+		else return R1M1_v;
+	}
+	
 	int Change (bit* page_table, vector<int>* frame_table){
+		int page_idx;
 		int index=frameFull();		
 		if (index !=-1){
 			LRU_dq.push_back(index);
@@ -320,7 +352,22 @@ class NRU : public Pager{
 		}	
 		else{
 			
+			vector<int> lowest_class=findLowestClass(page_table);
+			// cout<<"lowest_class:";
+			// for(int i=0; i<lowest_class.size(); i++){
+			// 	cout<<lowest_class[i]<<" ";
+			// }
+			// cout<<endl;
+			index= myrandom(lowest_class.size(), ofs)-1;
+			// page_idx=lowest_Pidx(page_table, index);
+			page_idx=lowest_class[index];			
+			if (unMap_count==10){unRef(page_table);unMap_count=0;}
+			// cout<<"index:"<<index<<" page_idx:"<<page_idx<<endl;
+			unMap_count++;
+			return page_table[page_idx].idx;
+
 		}
+	}
 };
 
 class MMU{
@@ -502,6 +549,8 @@ int main(int argc, char *argv[]){
 	if (algo=="c") {mmu.pager = new Clock_f;}
 	if (algo=="X") {mmu.pager = new Clock_p;}
 	if (algo=="l") {mmu.pager = new LRU;}
+	if (algo=="N") {mmu.pager = new NRU;}
+
 	mmu.frametable_init(num_frames);
 	bit page_table[64] = { };
 	mmu.workon_P=page_table;

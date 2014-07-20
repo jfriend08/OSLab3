@@ -12,8 +12,8 @@ MMU=$*
 echo "mmuprog=<$MMU> outdir=<$OUTDIR>"
 [[ "${MMU}" == "" ]] && exit
 
-#ALGOS="N l r f s c X a Y"
-ALGOS="r f s c X l"
+#ALGOS="N l r f s c X a Y "
+ALGOS="r f s c X l N"
 
 SPID=0   # process pid we are monitoring
 #ulimit -v 300000   # just limit the processes 
