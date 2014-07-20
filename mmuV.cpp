@@ -9,7 +9,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	have better OO design
 --	now r method looks good. Only need to print final report
 --	can print O, F, P as the order of option string
---	works fine for r f s c X methos
+--	works fine for r f s c X l methods
 
 Todo:	replacement algorithms is needed
 
@@ -43,7 +43,7 @@ int c, opterr=0, n1, n2, ofs=0;
 string ovalue, frames, arg_tmp, algo="l", fin_string;
 char fin_char;
 uint64_t U_count=0, M_count=0, I_count=0, O_count=0, Z_count=0, RW_count=0;
-deque<int> FIFO_dq;
+deque<int> FIFO_dq, LRU_dq;
 int hand=0;
 
 struct bit {
@@ -267,8 +267,7 @@ class Clock_p : public Pager{
 		}
 		for(int i=0; i<existPage.size(); i++){
 			if (hand_idx>existPage[i] && i==existPage.size()-1 ){return existPage[0];}
-			else if(hand_idx>existPage[i] && hand_idx<existPage[i+1]){return existPage[i+1];}
-			// else return existPage[0];
+			else if(hand_idx>existPage[i] && hand_idx<existPage[i+1]){return existPage[i+1];}			
 		}					
 		return existPage[0];
 	}
@@ -281,49 +280,48 @@ class Clock_p : public Pager{
 		}	
 		else{			
 			vector<int> existP=check_existP(page_table, frame_table);						
-			// cout<<"hand1:"<<hand<<endl;
 			hand=next_init(existP, hand);
-			// cout<<"hand2:"<<hand<<endl;
 			if(page_table[hand].R==0){
-				int tmp2=hand;
-				hand++;
-				// hand=next_idx(existP, hand);
+				int tmp2=hand; hand++;
 				return page_table[tmp2].idx; 
 			}
 			while (page_table[hand].R!=0){
-				page_table[hand].R=0;
-				// hand++;
+				page_table[hand].R=0;				
 				hand=next_idx(existP, hand);			
 			}
-			int tmp=hand;
-			hand++;
-			// hand=next_idx(existP, hand);
+			int tmp=hand; hand++;			
 			return page_table[tmp].idx;
-
-
-			// int lastP=existP[existP.size()-1]; int beginP=existP[0];
-			// while(page_table[hand].P==0){
-			// 	hand++;
-			// }
-			// if(page_table[hand].P==1 && page_table[hand].R==0){				
-			// 	int tmp2=hand;
-			// 	hand++;
-			// 	if(hand>lastP)hand=beginP;				
-			// 	return page_table[tmp2].idx;				
-			// }			
-			// while(page_table[hand].P==1 && page_table[hand].R!=0){								
-			// 	page_table[hand].R=0;				
-			// 	hand++;				
-			// 	if(hand>lastP)hand=beginP;	
-			// }				
-			// int tmp=hand;
-			// hand++;				
-			// if(hand>lastP)hand=beginP;	
-			// return page_table[tmp].idx;
 		}
 	}
 };
 
+class LRU : public Pager{
+	int Change (bit* page_table, vector<int>* frame_table){
+		int index=frameFull();		
+		if (index !=-1){
+			LRU_dq.push_back(index);
+			return index;
+		}	
+		else{
+			int new_index= LRU_dq[0];			
+			LRU_dq.pop_front();
+			LRU_dq.push_back(new_index);
+			return new_index;			
+		}
+	}
+};
+
+class NRU : public Pager{
+	int Change (bit* page_table, vector<int>* frame_table){
+		int index=frameFull();		
+		if (index !=-1){
+			LRU_dq.push_back(index);
+			return index;
+		}	
+		else{
+			
+		}
+};
 
 class MMU{
 public:
@@ -385,9 +383,19 @@ public:
 	void Modify (int rw, int page_index, int inst){
 		workon_P[page_index].R=1;workon_P[page_index].M=1;		
 	}
-	//// just add R bit ////
+	//// add R bit, and reorder LRU_dq for l method ////
 	void Reference (int rw, int page_index, int inst){
-		workon_P[page_index].R=1;		
+		workon_P[page_index].R=1;	
+		if(algo=="l"){
+			int frame_idx=workon_P[page_index].idx;
+			int idx_of_frame_idx=-1;
+			for (int i=0; i< LRU_dq.size(); i++){
+				if (frame_idx==LRU_dq[i])idx_of_frame_idx=i;			
+			}
+			int element= LRU_dq[idx_of_frame_idx];			
+			LRU_dq.erase(LRU_dq.begin()+idx_of_frame_idx);
+			LRU_dq.push_back(element);
+		}		
 	}
 	
 	Pager* pager;
@@ -434,8 +442,8 @@ public:
 				int full=pager->frameFull();
 				if(rw==1){
 					if (R_flag==1)cout<<"condition2_1"<<endl;
-					Modify(rw, page_index, task_idx);
 					Reference(rw, page_index, task_idx);
+					Modify(rw, page_index, task_idx);					
 					RW_count++;
 				}
 				else if (rw==0){
@@ -446,6 +454,11 @@ public:
 			}
 			printp(p_flag, workon_P, workon_F);	
 			printf(f_flag, workon_P, workon_F);	
+			// cout<<"LRU_dq:";
+			// for(int i=0; i<LRU_dq.size(); i++){
+			// 	cout<<LRU_dq[i]<<" ";
+			// }
+			// cout<<endl;
 		}		
 	}
 
@@ -488,6 +501,7 @@ int main(int argc, char *argv[]){
 	if (algo=="s") {mmu.pager = new SecondChance;}
 	if (algo=="c") {mmu.pager = new Clock_f;}
 	if (algo=="X") {mmu.pager = new Clock_p;}
+	if (algo=="l") {mmu.pager = new LRU;}
 	mmu.frametable_init(num_frames);
 	bit page_table[64] = { };
 	mmu.workon_P=page_table;
