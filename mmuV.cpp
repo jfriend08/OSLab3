@@ -9,7 +9,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	have better OO design
 --	now r method looks good. Only need to print final report
 --	can print O, F, P as the order of option string
---	works fine for r f s c X l N a methods
+--	works fine for r f s c X l N a Y methods
 
 Todo:	replacement algorithms is needed
 
@@ -137,9 +137,16 @@ void printf(int f_flag, bit* page_table, vector<int>* frame_table){
 		else if(algo=="c" | algo=="X"){
 			cout<<" || hand = "<<hand;					
 		}
-		else if (algo=="a" | algo=="Y"){
+		else if (algo=="a"){
 			cout<<" || ";
 			for (int i=0; i<AgingF_v.size(); i++){cout<<i<<":"<<AgingF_v[i]<<" ";			}	
+		}
+		else if (algo=="Y"){
+			cout<<" ||";
+			for (int i=0; i<AgingP_v.size(); i++){
+				if(AgingP_v[i]!=-1)cout<<" "<<i<<":"<<AgingP_v[i];
+				else cout<<" *";
+			}	
 		}
 		cout<<"\n";
 	}	
@@ -260,8 +267,7 @@ class Clock_f : public Pager{
 	}
 };
 
-class Clock_p : public Pager{
-	
+class Clock_p : public Pager{	
 	int next_idx(vector<int> existPage, int hand_idx){
 		for(int i=0; i<existPage.size(); i++){
 			if (hand_idx==existPage[i] && i==existPage.size()-1){return existPage[0];}
@@ -402,19 +408,55 @@ class Aging_F : public Pager{
 
 	int Change (bit* page_table, vector<int>* frame_table){		
 		int index=frameFull();		
-		if (index !=-1){
-			AgingF_v.push_back(0);
-			return index;
-		}	
+		if (index !=-1){AgingF_v.push_back(0);return index;		}	
 		else{						
-			shiftFrame();
-			AddRbit(page_table, frame_table);			
-			int new_index=findSmallIdx(AgingF_v);
-			AgingF_v[new_index]=0;
+			shiftFrame();AddRbit(page_table, frame_table);			
+			int new_index=findSmallIdx(AgingF_v);AgingF_v[new_index]=0;
 			return new_index;			
 		}	
+	}	
+};
+
+class Aging_P : public Pager{
+	int findSmallIdx(vector<uint32_t> vector, bit* page_table){
+		int idx=0, allZero=0;
+		long value=4294967296;
+		for(int i =0; i<vector.size(); i++){		
+			if(vector[i]==0){allZero++;}	
+		}		
+		if (allZero!=vector.size()){
+			for(int i =0; i<vector.size(); i++){
+				if(vector[i]!=0 && vector[i]<value){value=vector[i]; idx=i;}	
+			}
+		}		
+		int frame_idx=page_table[idx].idx;
+		return frame_idx;
+	}	
+	void shiftFrame(){
+		for(int i =0; i<AgingP_v.size(); i++){
+			if (AgingP_v[i]!=-1)AgingP_v[i]>>=1;
+		}
 	}
-	
+	void AddRbit(bit* page_table, vector<int>* frame_table){
+		for(int i=0; i<num_pages; i++){
+			// int page_index=frame_table->at(i);
+			// if(page_table[i].R==1){AgingP_v[i]|=80000000; page_table[i].R=0;}			
+			if(page_table[i].R==1){AgingP_v[i]|=2147483648; page_table[i].R=0;}
+		}
+	}
+
+
+	int Change (bit* page_table, vector<int>* frame_table){		
+		int index=frameFull();		
+		if (index !=-1){AgingP_v[index]=0;return index;		}	
+		else{						
+			shiftFrame();AddRbit(page_table, frame_table);			
+			int new_index=findSmallIdx(AgingP_v, page_table);
+			int page_index=frame_table->at(new_index);
+			AgingP_v[page_index]=-1;
+			return new_index;			
+		}	
+	}	
 };
 
 class MMU{
@@ -511,6 +553,7 @@ public:
 						Pagein(rw, page_index, frame_index, task_idx);
 						Map(rw, page_index, frame_index, task_idx);											
 						RW_count++;
+						if(algo=="Y")AgingP_v[page_index]=0;
 					}
 					else if(workon_P[page_index].S==0){
 						if (R_flag==1)cout<<"condition1_2"<<endl;
@@ -520,6 +563,7 @@ public:
 						Zero(rw, page_index, frame_index, task_idx);
 						Map(rw, page_index, frame_index, task_idx);											
 						RW_count++;
+						if(algo=="Y")AgingP_v[page_index]=0;
 					}
 				}
 				else if(full!=-1){
@@ -529,6 +573,7 @@ public:
 					Zero(rw, page_index, frame_index, task_idx);
 					Map(rw, page_index, frame_index, task_idx);							
 					RW_count++;
+					if(algo=="Y")AgingP_v[page_index]=0;
 				}
 			}
 			
@@ -546,6 +591,7 @@ public:
 					RW_count++;
 				}				
 			}
+			// if(algo=="Y")AgingP_v[page_index]=0;
 			printp(p_flag, workon_P, workon_F);	
 			printf(f_flag, workon_P, workon_F);	
 			// cout<<"LRU_dq:";
@@ -597,9 +643,9 @@ int main(int argc, char *argv[]){
 	if (algo=="X") {mmu.pager = new Clock_p;}
 	if (algo=="l") {mmu.pager = new LRU;}
 	if (algo=="N") {mmu.pager = new NRU;}
-	if (algo=="a") {
-		mmu.pager = new Aging_F;
-		// for (int i =0; i<num_pages; i++){AgingP_v.push_back(0);		}
+	if (algo=="a") {mmu.pager = new Aging_F;}
+	if (algo=="Y") {mmu.pager = new Aging_P;
+		for (int i=0; i<num_pages; i++){AgingP_v.push_back(-1);}
 	}
 
 	mmu.frametable_init(num_frames);
