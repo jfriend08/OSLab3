@@ -9,7 +9,7 @@ Usage: ./mmu [-a<algo>] [-o<options>] [–f<num_frames>] inputfile randomfile
 --	have better OO design
 --	now r method looks good. Only need to print final report
 --	can print O, F, P as the order of option string
---	works fine for r f s c X l N methods
+--	works fine for r f s c X l N a methods
 
 Todo:	replacement algorithms is needed
 
@@ -45,6 +45,7 @@ char fin_char;
 uint64_t U_count=0, M_count=0, I_count=0, O_count=0, Z_count=0, RW_count=0;
 deque<int> FIFO_dq, LRU_dq;
 int hand=0, unMap_count=1;
+vector<uint32_t> AgingP_v, AgingF_v;
 
 struct bit {
 		 unsigned int P:1;
@@ -53,6 +54,8 @@ struct bit {
 		 unsigned int S:1;
 		 unsigned int idx:6;		 
 };
+
+
 
 void flagAssign(string outputVal){
 	for (int i=0; i<outputVal.length(); i++){
@@ -131,8 +134,12 @@ void printf(int f_flag, bit* page_table, vector<int>* frame_table){
 			cout<<" || ";
 			for (int i=0; i<(signed)FIFO_dq.size(); ++i){cout<<FIFO_dq[i]<<" ";			}
 		}
-		if(algo=="c" | algo=="X"){
+		else if(algo=="c" | algo=="X"){
 			cout<<" || hand = "<<hand;					
+		}
+		else if (algo=="a" | algo=="Y"){
+			cout<<" || ";
+			for (int i=0; i<AgingF_v.size(); i++){cout<<i<<":"<<AgingF_v[i]<<" ";			}	
 		}
 		cout<<"\n";
 	}	
@@ -336,13 +343,11 @@ class NRU : public Pager{
 			else if (page_table[i].P==1 && page_table[i].R==1 && page_table[i].M==0){ R1M0_v.push_back(i);}
 			else if (page_table[i].P==1 && page_table[i].R==1 && page_table[i].M==1){ R1M1_v.push_back(i);}			
 		}
-		// cout<<R0M0_v.size()<<" "<<R0M1_v.size()<<" "<<R1M0_v.size()<<" "<<R1M1_v.size()<<endl;
 		if (R0M0_v.size()>0) return R0M0_v;
 		else if (R0M1_v.size()>0) return R0M1_v;
 		else if (R1M0_v.size()>0) return R1M0_v;
 		else return R1M1_v;
-	}
-	
+	}	
 	int Change (bit* page_table, vector<int>* frame_table){
 		int page_idx;
 		int index=frameFull();		
@@ -350,24 +355,66 @@ class NRU : public Pager{
 			LRU_dq.push_back(index);
 			return index;
 		}	
-		else{
-			
-			vector<int> lowest_class=findLowestClass(page_table);
-			// cout<<"lowest_class:";
-			// for(int i=0; i<lowest_class.size(); i++){
-			// 	cout<<lowest_class[i]<<" ";
-			// }
-			// cout<<endl;
-			index= myrandom(lowest_class.size(), ofs)-1;
-			// page_idx=lowest_Pidx(page_table, index);
+		else{			
+			vector<int> lowest_class=findLowestClass(page_table);			
+			index= myrandom(lowest_class.size(), ofs)-1;			
 			page_idx=lowest_class[index];			
-			if (unMap_count==10){unRef(page_table);unMap_count=0;}
-			// cout<<"index:"<<index<<" page_idx:"<<page_idx<<endl;
+			if (unMap_count==10){unRef(page_table);unMap_count=0;}			
 			unMap_count++;
 			return page_table[page_idx].idx;
-
 		}
 	}
+};
+class Aging_F : public Pager{
+	int findSmallIdx(vector<uint32_t> vector){
+		int idx=0, allZero=0;
+		long value=4294967296;
+		for(int i =0; i<vector.size(); i++){		
+			if(vector[i]==0){allZero++;}	
+		}		
+		if (allZero!=vector.size()){
+			for(int i =0; i<vector.size(); i++){
+				if(vector[i]!=0 && vector[i]<value){value=vector[i]; idx=i;}	
+			}
+		}		
+		return idx;
+	}	
+	void shiftFrame(){
+		for(int i =0; i<AgingF_v.size(); i++){
+			AgingF_v[i]>>=1;
+		}
+	}
+	vector<int> readRbit(vector<uint32_t> vectorin){
+		vector<int> Rvector;
+		for (int i=0; i<vectorin.size(); i++){
+			if ((vectorin[i] & 2147483648) == 2147483648){Rvector.push_back(1);}
+			else Rvector.push_back(0);
+		}
+		return Rvector;
+	}
+	void AddRbit(bit* page_table, vector<int>* frame_table){
+		for(int i=0; i<frame_table->size(); i++){
+			int page_index=frame_table->at(i);
+			// if(page_table[page_index].R==1){AgingF_v[i]|=80000000; page_table[page_index].R=0;}
+			if(page_table[page_index].R==1){AgingF_v[i]|=2147483648; page_table[page_index].R=0;}
+		}
+	}
+
+	int Change (bit* page_table, vector<int>* frame_table){		
+		int index=frameFull();		
+		if (index !=-1){
+			AgingF_v.push_back(0);
+			return index;
+		}	
+		else{						
+			shiftFrame();
+			AddRbit(page_table, frame_table);			
+			int new_index=findSmallIdx(AgingF_v);
+			AgingF_v[new_index]=0;
+			return new_index;			
+		}	
+	}
+	
 };
 
 class MMU{
@@ -550,6 +597,10 @@ int main(int argc, char *argv[]){
 	if (algo=="X") {mmu.pager = new Clock_p;}
 	if (algo=="l") {mmu.pager = new LRU;}
 	if (algo=="N") {mmu.pager = new NRU;}
+	if (algo=="a") {
+		mmu.pager = new Aging_F;
+		// for (int i =0; i<num_pages; i++){AgingP_v.push_back(0);		}
+	}
 
 	mmu.frametable_init(num_frames);
 	bit page_table[64] = { };
